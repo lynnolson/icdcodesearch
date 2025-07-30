@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Medical Code Search - MiniSearch</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 2rem;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            opacity: 0.9;
+            font-size: 1.1rem;
+        }
+
+        .search-container {
+            padding: 30px;
+            position: relative;
+        }
+
+        .search-box {
+            width: 100%;
+            padding: 16px 20px;
+            font-size: 16px;
+            border: 2px solid #e1e5e9;
+            border-radius: 8px;
+            outline: none;
+            transition: all 0.3s ease;
+            background: #f8f9fa;
+        }
+
+        .search-box:focus {
+            border-color: #667eea;
+            background: white;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+
+        .loading {
+            text-align: center;
+            padding: 20px;
+            color: #666;
+            font-style: italic;
+        }
+
+        .results {
+            margin-top: 20px;
+            max-height: 400px;
+            overflow-y: auto;
+            border: 1px solid #e1e5e9;
+            border-radius: 8px;
+            background: white;
+        }
+
+        .result-item {
+            padding: 15px 20px;
+            border-bottom: 1px solid #f0f0f0;
+            cursor: pointer;
+            transition: background-color 0.2s ease;
+        }
+
+        .result-item:hover {
+            background: #f8f9fa;
+        }
+
+        .result-item:last-child {
+            border-bottom: none;
+        }
+
+        .code {
+            font-weight: 600;
+            color: #667eea;
+            font-size: 14px;
+            margin-bottom: 4px;
+        }
+
+        .description {
+            color: #333;
+            line-height: 1.4;
+        }
+
+        .highlight {
+            background: #fff3cd;
+            padding: 1px 3px;
+            border-radius: 3px;
+            font-weight: 600;
+        }
+
+        .no-results {
+            text-align: center;
+            padding: 40px 20px;
+            color: #666;
+        }
+
+        .stats {
+            padding: 10px 20px;
+            background: #f8f9fa;
+            border-bottom: 1px solid #e1e5e9;
+            font-size: 14px;
+            color: #666;
+        }
+
+        .error {
+            background: #f8d7da;
+            color: #721c24;
+            padding: 15px 20px;
+            margin: 20px 0;
+            border-radius: 8px;
+            border: 1px solid #f5c6cb;
+        }
+
+        .search-tips {
+            margin-top: 15px;
+            padding: 15px;
+            background: #e3f2fd;
+            border-radius: 8px;
+            font-size: 14px;
+            color: #1565c0;
+        }
+
+        .search-tips strong {
+            color: #0d47a1;
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <div class="header">
+        <h1>Medical Code Search</h1>
+        <p>Powered by MiniSearch - Smart prefix matching & stemming</p>
+    </div>
+
+    <div class="search-container">
+        <input
+                type="text"
+                class="search-box"
+                placeholder="Try: 'diabetes preg', 'gest diab', 'O24', 'hypert'"
+                id="searchInput"
+        />
+
+        <div class="search-tips">
+            <strong>Smart Search Features:</strong>
+            • Prefix matching ("preg" finds "pregnancy")
+            • Fuzzy search (handles typos)
+            • Word stemming (automatic word variations)
+            • Boost for exact code matches
+        </div>
+
+        <div id="loadingMessage" class="loading">
+            Loading medical codes database and building search index...
+        </div>
+
+        <div id="results" class="results" style="display: none;">
+            <div id="searchStats" class="stats"></div>
+            <div id="resultsList"></div>
+        </div>
+    </div>
+</div>
+
+<script type="module">
+    import MiniSearch from "https://cdn.skypack.dev/minisearch";
+
+    class MedicalCodeSearch {
+        constructor() {
+            this.miniSearch = null;
+            this.data = [];
+            this.searchInput = document.getElementById('searchInput');
+            this.loadingMessage = document.getElementById('loadingMessage');
+            this.results = document.getElementById('results');
+            this.searchStats = document.getElementById('searchStats');
+            this.resultsList = document.getElementById('resultsList');
+
+            this.debounceTimer = null;
+            this.init();
+        }
+
+        async init() {
+            try {
+                await this.loadData();
+                this.setupMiniSearch();
+                this.setupEventListeners();
+                this.hideLoading();
+            } catch (error) {
+                console.error('Error:', error);
+                this.showError('Failed to load data: ' + error.message);
+            }
+        }
+
+        async loadData() {
+            try {
+                const response = await fetch('medical-codes.json');
+                if (!response.ok) {
+                    throw new Error('Failed to load medical codes file');
+                }
+                this.data = await response.json();
+            } catch (error) {
+                console.error('Error loading JSON file:', error);
+                // Fallback to sample data if JSON file fails to load
+                // console.log('Using sample data as fallback');
+                // this.data = generateSampleData();
+            }
+        }
+
+        setupMiniSearch() {
+            this.miniSearch = new MiniSearch({
+                fields: ['code', 'description'], // fields to index for full-text search
+                storeFields: ['code', 'description'], // fields to return with search results
+                searchOptions: {
+                    boost: { code: 3 }, // Boost exact code matches
+                    prefix: true, // Enable prefix search (e.g., 'preg' matches 'pregnancy')
+                    fuzzy: 0.2, // Enable fuzzy matching for typos
+                    combineWith: 'AND' // Require all search terms to match
+                },
+                // Custom tokenizer for better medical term handling
+                tokenize: (string) => {
+                    return string.toLowerCase()
+                        .split(/[\s\-.,;:()[\]{}]+/) // Split on various separators
+                        .filter(token => token.length > 0);
+                },
+                // Custom processing for medical terms
+                processTerm: (term) => {
+                    // Handle common medical abbreviations
+                    const abbreviations = {
+                        'preg': 'pregnancy',
+                        'gest': 'gestational',
+                        'diab': 'diabetes',
+                        'hypert': 'hypertension',
+                        'pneum': 'pneumonia',
+                        'fract': 'fracture'
+                    };
+
+                    return abbreviations[term] || term;
+                }
+            });
+
+            // Add all documents to the search index
+            this.miniSearch.addAll(this.data.map((item, index) => ({
+                id: index,
+                code: item.code,
+                description: item.description
+            })));
+        }
+
+        setupEventListeners() {
+            this.searchInput.addEventListener('input', (e) => {
+                const query = e.target.value.trim();
+
+                clearTimeout(this.debounceTimer);
+                this.debounceTimer = setTimeout(() => {
+                    this.performSearch(query);
+                }, 150);
+            });
+        }
+
+        performSearch(query) {
+            if (query.length < 2) {
+                this.hideResults();
+                return;
+            }
+
+            try {
+                const startTime = performance.now();
+
+                // Perform the search
+                const results = this.miniSearch.search(query, {
+                    prefix: true,
+                    fuzzy: 0.2,
+                    boost: { code: 3 },
+                    combineWith: 'AND'
+                });
+
+                const endTime = performance.now();
+                this.displayResults(results, query, endTime - startTime);
+            } catch (error) {
+                console.error('Search error:', error);
+                this.showError('Search failed: ' + error.message);
+            }
+        }
+
+        displayResults(results, query, searchTime) {
+            if (results.length === 0) {
+                this.showNoResults(query);
+                return;
+            }
+
+            this.searchStats.textContent =
+                'Found ' + results.length + ' results in ' + searchTime.toFixed(1) + 'ms';
+
+            let html = '';
+            for (let i = 0; i < Math.min(results.length, 50); i++) {
+                const result = results[i];
+                const highlightedCode = this.highlight(result.code, query);
+                const highlightedDesc = this.highlight(result.description, query);
+
+                html += `<div class="result-item" onclick="window.selectResult('${result.code}', '${result.description.replace(/'/g, "\\'")}')">` +
+                    '<div class="code">' + highlightedCode + '</div>' +
+                    '<div class="description">' + highlightedDesc + '</div>' +
+                    '</div>';
+            }
+
+            this.resultsList.innerHTML = html;
+            this.results.style.display = 'block';
+        }
+
+        highlight(text, query) {
+            if (!query || query.length < 2) return text;
+
+            const queryWords = query.toLowerCase().split(/\s+/);
+            let highlightedText = text;
+
+            queryWords.forEach(word => {
+                const regex = new RegExp('(' + word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')', 'gi');
+                highlightedText = highlightedText.replace(regex, '<span class="highlight">$1</span>');
+            });
+
+            return highlightedText;
+        }
+
+        showNoResults(query) {
+            this.searchStats.textContent = 'No results found for "' + query + '"';
+            this.resultsList.innerHTML =
+                '<div class="no-results">' +
+                '<p>No medical codes found matching your search.</p>' +
+                '<p><strong>Try:</strong></p>' +
+                '<ul style="text-align: left; display: inline-block; margin-top: 10px;">' +
+                '<li>Shorter terms (e.g., "diab" instead of "diabetes")</li>' +
+                '<li>Code prefixes (e.g., "O24" for gestational codes)</li>' +
+                '<li>Common abbreviations (e.g., "preg", "gest", "hypert")</li>' +
+                '</ul>' +
+                '</div>';
+            this.results.style.display = 'block';
+        }
+
+        hideResults() {
+            this.results.style.display = 'none';
+        }
+
+        hideLoading() {
+            this.loadingMessage.style.display = 'none';
+            this.searchInput.disabled = false;
+            this.searchInput.focus();
+        }
+
+        showError(message) {
+            this.loadingMessage.innerHTML = '<div class="error">' + message + '</div>';
+        }
+    }
+
+    // Make selectResult available globally
+    window.selectResult = function(code, description) {
+        document.getElementById('searchInput').value = code + ' - ' + description;
+        document.getElementById('results').style.display = 'none';
+        console.log('Selected:', { code: code, description: description });
+    };
+
+    document.addEventListener('DOMContentLoaded', function() {
+        new MedicalCodeSearch();
+    });
+
+    document.addEventListener('click', function(e) {
+        if (!e.target.closest('.search-container')) {
+            document.getElementById('results').style.display = 'none';
+        }
+    });
+</script>
+</body>
+</html>
