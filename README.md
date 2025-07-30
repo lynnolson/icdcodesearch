@@ -20,10 +20,25 @@ Try searching for:
 - `gest diab` - Gestational diabetes with abbreviation handling
 
 ## Quick Start
+Use a local development server
+```
+# Clone the repository
+git clone https://github.com/lynnolson/icdcodesearch.git
+cd icdcodesearch
 
-1. Clone the repository
-2. Open `minisearch_index.html` or `fuse_index.html` in a modern web browser
-3. Start searching medical codes immediately
+# Serve with a local server (Python example)
+python3 -m http.server 8000
+
+# Or use Node.js built-in server (Node 18+)
+npx http-server
+
+# Or install and use a simple server
+npm install -g http-server
+http-server
+
+# Open http://localhost:8000 in your browser
+```
+Click `minisearch_index.html` or `fuse_index.html`.
 
 
 ## File Structure
